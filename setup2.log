@@ -1,0 +1,20 @@
+[19:09:01] verify existing ptau...
+[32;22m[INFO]  [39;1msnarkJS[0m: Powers Of tau file OK!
+[19:09:13] groth16 setup (new circuit)...
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading r1cs
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading tauG1
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading tauG2
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading alphatauG1
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading betatauG1
+[32;22m[INFO]  [39;1msnarkJS[0m: Circuit hash: 
+		047de4ef 98af993f 3e8eae11 d2d52529
+		6e049489 dd47d1d2 80988cc3 f7099dd7
+		c09278a2 1b3b745a 78ceac1e 0287e534
+		21e0d96a 78e39331 68a5e3dc cd2d657d
+[19:09:29] SETUP_OK
+		90e6d2bc 8e2d2382 c81fa0e8 233ed8d7
+[19:09:36] CONTRIBUTE_OK
+[32;22m[INFO]  [39;1msnarkJS[0m: EXPORT VERIFICATION KEY FINISHED
+[19:09:36] VK_OK
+ic.length: 3 => public inputs = 2
+ALL_DONE

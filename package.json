@@ -1,0 +1,18 @@
+{
+  "name": "pusd-pool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PUSD shielded pool: BN254 Groth16 circuit (Circom) + BCH covenant. Chipnet PoC.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@iden3/bigarray": "^0.0.2",
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
+    "ffjavascript": "^0.3.1",
+    "snarkjs": "^0.7.6"
+  }
+}

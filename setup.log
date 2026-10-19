@@ -1,0 +1,32 @@
+[17:59:24] prepare phase2...
+[18:08:28] PREP_OK
+[32;22m[INFO]  [39;1msnarkJS[0m: Powers Of tau file OK!
+[32;22m[INFO]  [39;1msnarkJS[0m: Powers of Tau Ok!
+[18:08:40] groth16 setup...
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading r1cs
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading tauG1
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading tauG2
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading alphatauG1
+[32;22m[INFO]  [39;1msnarkJS[0m: Reading betatauG1
+[32;22m[INFO]  [39;1msnarkJS[0m: Circuit hash: 
+		5464a0d2 14fa2028 af336876 c181f80b
+		26a9839c fe3ec237 fefaeb57 e146cc06
+		b6da41c1 0e6b545f f4897e4c 84cba2d1
+		75620270 5dd7ca39 c96bbfc8 2aeab6bf
+[18:08:55] SETUP_OK
+[32;22m[INFO]  [39;1msnarkJS[0m: Circuit Hash: 
+		5464a0d2 14fa2028 af336876 c181f80b
+		26a9839c fe3ec237 fefaeb57 e146cc06
+		b6da41c1 0e6b545f f4897e4c 84cba2d1
+		75620270 5dd7ca39 c96bbfc8 2aeab6bf
+[32;22m[INFO]  [39;1msnarkJS[0m: Contribution Hash: 
+		61206944 f8dae0da a6e56cca 5a93e31d
+		3aa5b5b8 b6ccd5eb 453613f0 4b6c2cb4
+		d83c1c91 7ec8ba49 af08a012 ce52fd40
+		19c5edc0 aced19ec f0876b6c 87ae2781
+[18:09:03] CONTRIBUTE_OK
+[32;22m[INFO]  [39;1msnarkJS[0m: EXPORT VERIFICATION KEY STARTED
+[32;22m[INFO]  [39;1msnarkJS[0m: > Detected protocol: groth16
+[32;22m[INFO]  [39;1msnarkJS[0m: EXPORT VERIFICATION KEY FINISHED
+[18:09:03] VK_OK
+ALL_DONE

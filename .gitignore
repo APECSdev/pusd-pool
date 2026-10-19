@@ -1,0 +1,15 @@
+# Dependencies (install with `pnpm install --frozen-lockfile`)
+node_modules/
+
+# Large / regenerable build artifacts (see README.md, "Regenerating build/")
+build/ptau/
+build/*.ptau
+build/*.zkey
+build/pool.r1cs
+build/pool.sym
+build/pool_js/
+
+# artifacts/ is a STALE pre-PPOT snapshot (2026-10-17, self-generated ptau keys);
+# hashes verified to differ from the current PPOT-derived outputs in build/.
+# Kept on the build box for reference only — not versioned.
+artifacts/

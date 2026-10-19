@@ -1,0 +1,130 @@
+// asset-pool.cash
+//
+// PUSD shielded pool — the BCH state covenant (chipnet PoC).
+//
+// This contract is the ON-CHAIN half of the shielded pool. It holds the pool's
+// PUSD CashTokens and its state, and only allows a spend that applies exactly the
+// state transition a valid Groth16 proof attests to. The ZK half is the Option-2
+// circuit (circuits/pool.circom) verified by the densless-msm verifier
+// (proven PASS on the BCH 2026 VM, 5 P2SH32 inputs / 1 standard tx).
+//
+// ─── Architecture: a 6th input, reading the verifier's proven public inputs ───
+// The densless-msm verifier is 5 P2SH32 inputs in ONE transaction (intra-tx model:
+// the inputs carry the pairing forward by reading each other's witnesses, no NFT).
+// This covenant is a SEPARATE 6th input in the SAME transaction, running in
+// token-threading (covenant) mode: its state lives in an NFT commitment, perpetuated
+// via tx.outputs[0]. The verifier is 100% untouched.
+//
+// The coupling: the verifier's genesis step (input 3) carries the two proven public
+// inputs as witness pushes at FIXED byte offsets (stable across all proofs):
+//     n0 = merkleRoot   — 32-byte LE VM number at unlocking byte offset 1824
+//     n1 = actionHash   — 32-byte LE VM number at unlocking byte offset 1791
+//         actionHash = Poseidon(nf0,nf1,cm0,cm1,|pv|,signPv,category)
+// The verifier recomputes vk_x = IC0 + n0·IC1 + n1·IC2 in-script and the pairing
+// passes only for a valid proof over exactly (n0, n1) — so by reading these two
+// values out of the sibling witness, this covenant learns the transition the proof
+// attests to. (BCH covenants MAY introspect a sibling input's unlocking bytecode.)
+//
+// ─── State model ─────────────────────────────────────────────────────────────
+// The pool UTXO carries a MUTABLE NFT whose commitment encodes the pool state:
+//     commitment = merkleRoot[32] | nullifierSetHash[32]        (64 bytes)
+//   · merkleRoot       — current note-tree root, stored as the 32-byte LE VM-number
+//                        byte form (matches the verifier's n0 push exactly).
+//   · nullifierSetHash — SHA256 rolling hash over spent nullifiers (double-spend
+//                        resistance; the full set is held by the indexer).
+// The PUSD balance is the fungible token amount on the same UTXO.
+//
+// ─── What spend() enforces (introspection only — cheap opcodes) ──────────────
+//   0. Root binding : the proof's n0 (merkleRoot) == this pool's stored root, so the
+//                     proof is anchored to THIS pool's current state.
+//   1. Continuity   : output 0 pays back to THIS covenant and keeps the PUSD category.
+//   2. State update : output 0's NFT commitment = newMerkleRoot | newNullifierHash,
+//                     where newNullifierHash = sha256(oldNullifierHash | nf0 | nf1).
+//   3. Conservation : per-op PUSD token-amount check (shield/transfer/unshield).
+//   4. Asset binding: the token category equals the pinned PUSD category.
+// The actionHash note-level binding (that the proven n1 matches the enforced
+// transition) is supplied by the verifier + circuit; the PoC covenant uses SHA256
+// (not on-chain Poseidon) for its own state fold because Poseidon(7) does not fit an
+// input's op-cost budget (see COVENANT-DESIGN.md §5b/§6).
+//
+// cashscript pragma for the mr-zwets compiler-optimizations-8 fork.
+pragma cashscript ^0.14.0;
+
+contract AssetPool(
+    bytes32 assetCategory        // pinned PUSD CashToken category (on-chain byte order)
+) {
+    // spend(): apply one shielded state transition.
+    //
+    // Parameters are the values the covenant cannot read from its own state but must
+    // fold into the NEW state / conservation check. They are supplied by the
+    // transaction builder (the wallet) and bound to the proof by the verifier.
+    //
+    //   nf0, nf1          — the two spent nullifiers (fold into nullifierSetHash)
+    //   newMerkleRoot     — note-tree root after appending cm0, cm1 (LE byte form)
+    //   publicValueAbs    — |public PUSD moved| this transition
+    //   isUnshield        — 0 => value flows IN (shield/transfer); 1 => OUT (unshield)
+    function spend(
+        bytes32 nf0,
+        bytes32 nf1,
+        bytes32 newMerkleRoot,
+        int publicValueAbs,
+        int isUnshield
+    ) {
+        require(tx.version == 2);
+
+        // ── locate THIS input ────────────────────────────────────────────────
+        int i = this.activeInputIndex;
+
+        // ── 4. asset binding: this input holds the pinned PUSD category ──────
+        //    tx.inputs[i].tokenCategory returns the 32-byte category concatenated
+        //    with the NFT capability byte (0x01 = mutable). The pool state NFT is
+        //    always mutable, so compare against assetCategory + 0x01. assetCategory
+        //    is supplied in on-chain (reversed) byte order, matching introspection.
+        require(tx.inputs[i].tokenCategory == assetCategory + 0x01);
+
+        // ── 0. root binding: read the proof's n0 (merkleRoot) from the verifier
+        //    genesis sibling witness and require it to match THIS pool's stored root.
+        //    n0 is the 32-byte LE VM number whose DATA payload starts at byte offset
+        //    1825 of the genesis unlocking bytecode (byte 1824 is the 0x20 push opcode);
+        //    the stored root uses the same LE byte form.
+        //    The verifier genesis step is always tx input index 3.
+        bytes storedRoot = tx.inputs[i].nftCommitment.split(32)[0];
+        bytes provenRoot = tx.inputs[3].unlockingBytecode.split(1825)[1].split(32)[0];
+        require(provenRoot == storedRoot);
+
+        // ── read current nullifier-set hash from THIS input's NFT commitment ──
+        bytes oldNullifierHash = tx.inputs[i].nftCommitment.split(32)[1];
+
+        int currentBalance = tx.inputs[i].tokenAmount;
+
+        // ── 2. fold the two spent nullifiers into the nullifier set hash ─────
+        bytes32 newNullifierHash = sha256(oldNullifierHash + nf0 + nf1);
+
+        // ── build the NEW state commitment ───────────────────────────────────
+        bytes newCommitment = newMerkleRoot + newNullifierHash;
+
+        // ── 3. conservation: expected new PUSD balance per op ────────────────
+        //   shield/transfer (isUnshield=0): balance' = balance + publicValueAbs
+        //   unshield        (isUnshield=1): balance' = balance - publicValueAbs
+        int newBalance = currentBalance + publicValueAbs - (2 * isUnshield * publicValueAbs);
+        require(newBalance >= 0);
+
+        // ── 1. continuity: output 0 pays back to this same covenant ──────────
+        require(tx.outputs[0].lockingBytecode == tx.inputs[i].lockingBytecode);
+
+        // ── output 0 carries the NEW state + NEW balance + SAME asset ────────
+        require(tx.outputs[0].tokenCategory == assetCategory + 0x01);
+        require(tx.outputs[0].nftCommitment == newCommitment);
+        require(tx.outputs[0].tokenAmount == newBalance);
+
+        // ── unshield pays out public PUSD to a recipient output ──────────────
+        // When isUnshield == 1, a public PUSD output of publicValueAbs must exist
+        // (output 1). When isUnshield == 0 (shield/transfer), no such requirement.
+        if (isUnshield == 1) {
+            // the payout is a FUNGIBLE-only PUSD output (no NFT), so its
+            // tokenCategory is the bare 32-byte category (no capability byte).
+            require(tx.outputs[1].tokenCategory == assetCategory);
+            require(tx.outputs[1].tokenAmount == publicValueAbs);
+        }
+    }
+}
