@@ -19,7 +19,9 @@
 // inputs as witness pushes at FIXED byte offsets (stable across all proofs):
 //     n0 = merkleRoot   — 32-byte LE VM number at unlocking byte offset 1824
 //     n1 = actionHash   — 32-byte LE VM number at unlocking byte offset 1791
-//         actionHash = Poseidon(nf0,nf1,cm0,cm1,|pv|,signPv,category)
+//         actionHash = SHA256(nf0|nf1|cm0|cm1||pv||signPv|category|newMerkleRoot)
+//         (each field a 32-byte big-endian encoding; the 256-byte digest's top 3 bits
+//          are cleared so it fits the BN254 scalar field — see COVENANT-DESIGN.md §7)
 // The verifier recomputes vk_x = IC0 + n0·IC1 + n1·IC2 in-script and the pairing
 // passes only for a valid proof over exactly (n0, n1) — so by reading these two
 // values out of the sibling witness, this covenant learns the transition the proof
@@ -42,10 +44,14 @@
 //                     where newNullifierHash = sha256(oldNullifierHash | nf0 | nf1).
 //   3. Conservation : per-op PUSD token-amount check (shield/transfer/unshield).
 //   4. Asset binding: the token category equals the pinned PUSD category.
-// The actionHash note-level binding (that the proven n1 matches the enforced
-// transition) is supplied by the verifier + circuit; the PoC covenant uses SHA256
-// (not on-chain Poseidon) for its own state fold because Poseidon(7) does not fit an
-// input's op-cost budget (see COVENANT-DESIGN.md §5b/§6).
+//   5. actionHash   : the covenant RECOMPUTES the actionHash from the very values it
+//                     enforces (nf0, nf1, cm0, cm1, |pv|, sign, category, newMerkleRoot)
+//                     and requires it to equal the proof's n1. This binds the proof to
+//                     the EXACT transition the covenant applies — a proof over a
+//                     different transition cannot be replayed against this pool.
+// The actionHash uses SHA256 (not on-chain Poseidon) because Poseidon(7) does not fit
+// an input's op-cost budget; SHA256 is a native opcode and the circuit hashes the same
+// 256-byte preimage in-circuit (see COVENANT-DESIGN.md §5b/§6/§7).
 //
 // cashscript pragma for the mr-zwets compiler-optimizations-8 fork.
 pragma cashscript ^0.14.0;
@@ -56,16 +62,23 @@ contract AssetPool(
     // spend(): apply one shielded state transition.
     //
     // Parameters are the values the covenant cannot read from its own state but must
-    // fold into the NEW state / conservation check. They are supplied by the
-    // transaction builder (the wallet) and bound to the proof by the verifier.
+    // fold into the NEW state / conservation check / actionHash. They are supplied by
+    // the transaction builder (the wallet) and bound to the proof by the verifier.
     //
     //   nf0, nf1          — the two spent nullifiers (fold into nullifierSetHash)
+    //   cm0, cm1          — the two new note commitments (fold into actionHash)
     //   newMerkleRoot     — note-tree root after appending cm0, cm1 (LE byte form)
     //   publicValueAbs    — |public PUSD moved| this transition
     //   isUnshield        — 0 => value flows IN (shield/transfer); 1 => OUT (unshield)
+    //
+    // nf0, nf1, cm0, cm1, newMerkleRoot are supplied as 32-byte LE VM-number byte form
+    // (the same form the circuit's field elements take as VM numbers); the covenant
+    // reverses them to big-endian for the SHA256 actionHash preimage.
     function spend(
         bytes32 nf0,
         bytes32 nf1,
+        bytes32 cm0,
+        bytes32 cm1,
         bytes32 newMerkleRoot,
         int publicValueAbs,
         int isUnshield
@@ -126,5 +139,41 @@ contract AssetPool(
             require(tx.outputs[1].tokenCategory == assetCategory);
             require(tx.outputs[1].tokenAmount == publicValueAbs);
         }
+
+        // ── 5. actionHash binding: recompute the actionHash from the enforced
+        //    values and require it to equal the proof's n1 (read from the verifier
+        //    genesis sibling witness at byte offset 1792). This is the soundness
+        //    link: the proof attests to EXACTLY the transition this covenant applies.
+        //
+        //    Preimage = 8 fields × 32-byte big-endian:
+        //      nf0 | nf1 | cm0 | cm1 | publicValueAbs | publicValueSign | assetCategory
+        //      | newMerkleRoot
+        //    The field-element args (nf0/nf1/cm0/cm1/newMerkleRoot) arrive as 32-byte
+        //    LE VM numbers, so reverse() them to big-endian. publicValueAbs and the
+        //    sign (isUnshield) are small ints: toPaddedBytes(x, 32) is the LE NUM2BIN
+        //    form, reversed to big-endian. assetCategory is the ON-CHAIN (reversed)
+        //    category bytes (the constructor arg matches introspection byte order), so
+        //    reverse() it back to the natural big-endian integer encoding the circuit
+        //    hashed.
+        bytes32 actionHashBE = sha256(
+            nf0.reverse()
+            + nf1.reverse()
+            + cm0.reverse()
+            + cm1.reverse()
+            + toPaddedBytes(publicValueAbs, 32).reverse()
+            + toPaddedBytes(isUnshield, 32).reverse()
+            + assetCategory.reverse()
+            + newMerkleRoot.reverse()
+        );
+        // Clear the top 3 bits of the big-endian digest (guarantees the result is
+        // always < the BN254 scalar-field prime p, so no mod-p reduction is needed),
+        // then reverse to the LE VM-number form the verifier pushes as n1.
+        bytes actionHashLE = (
+            (actionHashBE.split(1)[0] & 0x1f) + actionHashBE.split(1)[1]
+        ).reverse();
+        // n1 is the 32-byte LE VM number whose DATA payload starts at byte offset
+        // 1792 of the genesis unlocking bytecode (byte 1791 is the 0x20 push opcode).
+        bytes provenActionHash = tx.inputs[3].unlockingBytecode.split(1792)[1].split(32)[0];
+        require(provenActionHash == actionHashLE);
     }
 }
