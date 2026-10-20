@@ -56,3 +56,37 @@ box; publish via a GitHub Release if external distribution is needed.
 - Bench + red-team gate (zk-verifier-bench `bch-groth16-intratx-pairfold5-densless-msm`):
   PASS — 5/5 invalid rejected, 9/9 mutated public inputs rejected, 26/26
   maintainer red-team runs rejected.
+
+## Chipnet demo token (stand-in for PUSD, minted 2026-10-19)
+
+PUSD itself (`0x2469ac...2544`) is mainnet-only, so a stand-in CashToken was
+minted on chipnet for the demo pool (the covenant is asset-generic; pass this
+category as the `assetCategory` constructor arg at deploy time):
+
+- **category (display/BE)**: `479aeebabc682ddb90a3671bffd2a0bd918737de13f19a92231ed36a8580cc11`
+- **category (on-chain/LE, as it appears in token prefixes)**: `11cc80856ad31e23929af113de378791bda0d2ff1b67a390db2d68bcbaee9a47`
+- genesis tx `4257dbfb68540cc9afcf569da8e651790c82d3951bdff88f5232a372760ba977`
+  (via the `chipnet.bch.ninja` faucet, PoW-gated `POST /api/challenge` + `/api/claim`),
+  confirmed in chipnet block 328616.
+- Minted payload: **100,000,000 fungible units + minting-capability NFT** (empty
+  commitment), consolidated into one UTXO by sweep tx
+  `be9a2911cf567f37821f777a073a9b59792b58791fa118a82925f66c67bb0ad8`
+  (output 0: 100,000 sats + full token payload; output 1: 899,000 sats change).
+- Mint key: HD wallet, path `m/44'/145'/0'/0/0`, address
+  `bchtest:qpt2lckk5ck5x7rwcnl6ucj6z0h9njm0pvy5nudg50`
+  (token-aware form `bchtest:zpt2lckk5ck5x7rwcnl6ucj6z0h9njm0pvr7qzrwtu`).
+  Mnemonic/private key live ONLY in the gitignored secret store
+  (`/Workspace/apecsdev/.secrets/pusd-pool-chipnet-mint.json`, chmod 600) —
+  test funds, no value.
+- Explorer: `https://chipnet.chaingraph.cash/tx/<txid>`.
+
+### Fulcrum / signing caveats discovered during the mint (matter for wallet wiring)
+
+1. **Token-bearing UTXOs are hidden from legacy Electrum queries.** Fulcrum's
+   `blockchain.address.listunspent` / `get_balance` with default params return
+   NOTHING for token outputs (the genesis output looked "missing" on 3 servers).
+   Pass the second param `include_tokens` (or `tokens_only`) to see them.
+2. **Spending a token-bearing UTXO requires covering its token prefix in the
+   sighash** (2023 CashTokens signing-serialization change): with libauth, set
+   `sourceOutputs[i].token` before `generateSigningSerializationBCH`, else the
+   input fails NULLFAIL (`Signature must be zero for failed CHECK(MULTI)SIG`).
