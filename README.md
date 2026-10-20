@@ -90,3 +90,34 @@ category as the `assetCategory` constructor arg at deploy time):
    sighash** (2023 CashTokens signing-serialization change): with libauth, set
    `sourceOutputs[i].token` before `generateSigningSerializationBCH`, else the
    input fails NULLFAIL (`Signature must be zero for failed CHECK(MULTI)SIG`).
+3. **libauth `outpointTransactionHash` is display/BE order** (it reverses internally
+   in `encodeTransaction`). Passing it pre-reversed (LE) double-reverses it and the
+   node rejects with "Missing inputs". This cost a debugging cycle during the pool
+   funding broadcast — always pass the plain display txid to libauth.
+4. **NFT commitment length**: 64-byte pool-state commitments broadcast fine on
+   chipnet (the 2026 VM raised `maximumTokenCommitmentLength` to 128; the 2023
+   limit of 40 is no longer enforced on chipnet — confirmed live).
+
+## Covenant deployment (chipnet, 2026-10-20)
+
+The 7-arg Option-F covenant is funded and live on chipnet with its genesis state.
+
+- **Covenant locking bytecode (P2SH32)**:
+  `aa2075c371c36395d80fc9a7e8922babb58b9539f92fd199aa80cd497b72085d2ec287`
+  (`OP_HASH256 <hash256(redeem)> OP_EQUAL`; redeem = ctor-push(assetCategory) +
+  the 189-byte contract bytecode, 222 bytes total).
+- **CashAddress (P2SH32, chipnet)**:
+  `bchtest:qd6uxuwrvw2asr7f5l5fy2atkk9e2w0e9lgen25qe4yhkusgt5hvyhutcs9qm`
+- **Funding tx**: `6ea1883d6faadfe6b5338025d9f6e23ad59aca83ed85ef62e7feb4c5292ac472`
+  (vout 0 = the pool UTXO). Spends the two mint-key UTXOs from the sweep tx
+  `be9a2911...`; vout 1 returns 995,000 sats change to the mint key; vout 2 returns
+  the minting-capability NFT to the mint key so demo supply can be topped up.
+- **Pool UTXO**: 1,000 sats + **100,000,000 fungible stand-in units** + a
+  **mutable-capability NFT** carrying the 64-byte genesis state commitment:
+  `3e1f1922dfb671d3f912f7ea461e0a88ee848fdde12b6c18ab1ad2c56ae73421` (genesis
+  merkle root = depth-20 Poseidon zero tree, LE VM-number form) ‖ `00×32`
+  (empty nullifier-set hash).
+- Broadcast via `blockchain.transaction.broadcast` over `chipnet.imaginary.cash:50004`
+  (raw `ws`; the `@electrum-cash/network` client swallows the broadcast result —
+  use a raw WebSocket to read the txid/error).
+- Explorer: `https://chipnet.chaingraph.cash/tx/6ea1883d6faadfe6b5338025d9f6e23ad59aca83ed85ef62e7feb4c5292ac472`.
