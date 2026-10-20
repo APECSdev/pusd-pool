@@ -49,13 +49,17 @@ On the `runner` build box (`~/pusd-pool`), with `pnpm install --frozen-lockfile`
 The current zkey (`build/pool_final.zkey`, 94 MB) and wasm live on the build
 box; publish via a GitHub Release if external distribution is needed.
 
-## Status (verified 2026-10-19)
+## Status (verified 2026-10-20)
 
 - `eval-pool.mjs`: transfer/shield/unshield all accepted, op-cost within budget
   (65,885 / 65,893 / 65,981 vs 166,400 / 168,000 / 168,000).
 - Bench + red-team gate (zk-verifier-bench `bch-groth16-intratx-pairfold5-densless-msm`):
   PASS — 5/5 invalid rejected, 9/9 mutated public inputs rejected, 26/26
   maintainer red-team runs rejected.
+- **Live on chipnet**: fresh pool deployment (TX-P3/G3/B3) + first SHIELD
+  (TX-S1) confirmed at block 328733 — see "On-chain demo" below. The full 8-input
+  SHIELD tx (5 verifier inputs + pool covenant + public FT + sats) passes on the
+  BCH 2026 VM, both consensus and standard (relayable under default mempool policy).
 
 ## Chipnet demo token (stand-in for PUSD, minted 2026-10-19)
 
@@ -98,26 +102,60 @@ category as the `assetCategory` constructor arg at deploy time):
    chipnet (the 2026 VM raised `maximumTokenCommitmentLength` to 128; the 2023
    limit of 40 is no longer enforced on chipnet — confirmed live).
 
-## Covenant deployment (chipnet, 2026-10-20)
+## On-chain demo (chipnet, confirmed 2026-10-20)
 
-The 7-arg Option-F covenant is funded and live on chipnet with its genesis state.
+A fresh, self-contained pool was deployed and the **first SHIELD transaction was
+confirmed on chipnet block 328733**. (An earlier funding chain — funding tx
+`6ea1883d...` — was superseded; the chain below is authoritative.)
+
+### Pool deployment
+
+| Tx | txid | Role |
+| -- | ---- | ---- |
+| TX-P3 | `8c73ff150fbc5d1599d2de187c3382c5926cc5c9c2621cdc2cac1fc14cd93144` | token-category genesis for the demo PUSD stand-in |
+| TX-G3 | `3fd526e9cc5119cd11ef76615ad0c9e1b6187910aeaae1ed178b48c96897656b` | mint 100,000,000 fungible units (vout 2) |
+| TX-B3 | `0738f33d8e83492f1ae7276f16e49e15741e75bff6d0ec0e05e3039b85859020` | pool init — pool UTXO (vout 0) carries 0 FT + mutable NFT with genesis state `{seededRoot ‖ 00×32}` |
+| TX-V3 | `473f9e484e5c83a45ddd0003c6c3260c30f385be48e2ae72fa5a503f4637bf14` | funds the 5 verifier P2SH32 lockings (vouts 0–4) + sats change |
 
 - **Covenant locking bytecode (P2SH32)**:
-  `aa2075c371c36395d80fc9a7e8922babb58b9539f92fd199aa80cd497b72085d2ec287`
-  (`OP_HASH256 <hash256(redeem)> OP_EQUAL`; redeem = ctor-push(assetCategory) +
-  the 189-byte contract bytecode, 222 bytes total).
-- **CashAddress (P2SH32, chipnet)**:
-  `bchtest:qd6uxuwrvw2asr7f5l5fy2atkk9e2w0e9lgen25qe4yhkusgt5hvyhutcs9qm`
-- **Funding tx**: `6ea1883d6faadfe6b5338025d9f6e23ad59aca83ed85ef62e7feb4c5292ac472`
-  (vout 0 = the pool UTXO). Spends the two mint-key UTXOs from the sweep tx
-  `be9a2911...`; vout 1 returns 995,000 sats change to the mint key; vout 2 returns
-  the minting-capability NFT to the mint key so demo supply can be topped up.
-- **Pool UTXO**: 1,000 sats + **100,000,000 fungible stand-in units** + a
-  **mutable-capability NFT** carrying the 64-byte genesis state commitment:
-  `3e1f1922dfb671d3f912f7ea461e0a88ee848fdde12b6c18ab1ad2c56ae73421` (genesis
-  merkle root = depth-20 Poseidon zero tree, LE VM-number form) ‖ `00×32`
-  (empty nullifier-set hash).
-- Broadcast via `blockchain.transaction.broadcast` over `chipnet.imaginary.cash:50004`
-  (raw `ws`; the `@electrum-cash/network` client swallows the broadcast result —
-  use a raw WebSocket to read the txid/error).
-- Explorer: `https://chipnet.chaingraph.cash/tx/6ea1883d6faadfe6b5338025d9f6e23ad59aca83ed85ef62e7feb4c5292ac472`.
+  `aa206f456fbb14df6384ef148a7596693a55e368f727b2662494e6fdf2e753e7505887`
+- **CashAddress (P2SH32, chipnet)**: `bchtest:pdh52mamzn0k8p80zj98t9nf8f27x68hy7exvfy5um7l9e6nuag9sktq4tflt`
+  (token-aware `bchtest:rdh52mamzn0k8p80zj98t9nf8f27x68hy7exvfy5um7l9e6nuag9sycu5jgxq`)
+- **Pool UTXO (TX-B3:vout0)**: 1,000 sats + **0 fungible units** + mutable NFT with the
+  64-byte genesis state commitment = seeded merkle root
+  `2c0f533600a77df705b7a23481a16bbc2baa9e9abb6a2943857931faa3f44525` (LE) ‖ `00×32`.
+
+### SHIELD transaction (TX-S1) — the first private payment
+
+- **txid**: `d3a442f3d3145cba3d1d6fd626164e077fa92b02720b882e3e98b40e70f4188c`
+- **confirmed**: chipnet block **328733**
+- **shape**: 8 inputs (5 verifier: TX-V3 vouts 0–4 = executor×3 + genesis + terminal; pool
+  covenant TX-B3:vout0; public FT TX-G3:vout2; sats TX-V3:vout5), 8 outputs
+  (pool continuity ‖ executor×3 ‖ terminal ‖ genesis ‖ public-FT change ‖ sats change),
+  36,999 bytes, 40,000-sat fee.
+- **result**: pool balance goes 0 → **1,000,000 shielded PUSD** (pool continuity vout 0
+  carries 1M FT + mutable NFT with the new state `newMerkleRoot ‖ sha256(00×32 ‖ nf0 ‖ nf1)`);
+  public-FT change (vout 6) = 99,000,000 units back to the mint key.
+- **VM**: all 8 inputs pass on `createVirtualMachineBch2026`, **both consensus and
+  standard** — relayable under default mempool policy.
+- **Explorer**: `https://chipnet.chaingraph.cash/tx/d3a442f3d3145cba3d1d6fd626164e077fa92b02720b882e3e98b40e70f4188c`
+
+### Verifier patching required to compose with the covenant
+
+The stock `densless-msm` verifier's **terminal step hard-pins `tx.inputs.length == 5`**
+(`densless-recovered/terminal.mjs`: `OP_5 OP_EQUALVERIFY`), which structurally rejects
+any additional sibling input. The pool covenant and the public-FT input must join the
+same transaction as extra inputs (indices ≥ 5), so the terminal's input-count check is
+relaxed to `tx.inputs.length >= 5` (`OP_5 OP_GREATERTHANOREQUAL OP_VERIFY`). All other
+topology pins are unchanged: the terminal stays at input index 4 with `outpointIndex ==
+activeInputIndex`, and the 3 executor + 1 genesis worker lockings are still bound by the
+baked-in `workerLockingRoot`. The genesis step's public-input witness pushes stay at
+**byte offsets 1825 (n0 = merkleRoot) and 1792 (n1 = actionHash)** — the deployed pool
+covenant reads exactly these, so no pool redeploy is needed.
+
+- **New terminal locking**: `aa20fe0301c69d4f570ff0d07dd664172b026cbb2eec8c7682dd297b75cfa7d5527e87`
+- **New executor locking**: `aa20003bd8d3fef9c20cb345f9ec00e5c4b5e8d09dd589ffb4344a076acfd366d88187`
+- **New genesis locking**: `aa20a4c97d7a380bf67b9c24d61119ced47209a7a5e1f3ad5a3d914e167a89d74ef687`
+
+(The patched `terminal.mjs` and the full build records live in `deploy-meta-s1.json` on
+the build box; backup `terminal.mjs.bak` preserved.)

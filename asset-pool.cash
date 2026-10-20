@@ -176,4 +176,49 @@ contract AssetPool(
         bytes provenActionHash = tx.inputs[3].unlockingBytecode.split(1792)[1].split(32)[0];
         require(provenActionHash == actionHashLE);
     }
+
+    // init(): one-time bootstrap — seed the note tree so the pool becomes spendable.
+    //
+    // WHY: the circuit requires BOTH input notes to prove merkle membership against the
+    // public merkleRoot, but a freshly deployed pool stores the EMPTY-tree (all-zero)
+    // root, and no real note commitment equals a zero leaf. So an empty-tree genesis can
+    // never anchor a first proof. init() performs a single state transition that replaces
+    // the empty root with a NON-empty root that already contains the first note(s) the
+    // owner will later spend. It does NOT move any tokens and does NOT mark any nullifier
+    // spent (the seeded notes remain unspent), so it is value-neutral and double-spend-safe.
+    //
+    // Soundness / anti-griefing: init() may ONLY run while the pool is still in its empty
+    // genesis state (merkleRoot == empty-tree root AND nullifierSetHash == 0). After any
+    // real spend() the root is non-empty and init() can never run again. Because the empty
+    // genesis is a fixed, publicly-computable constant (the depth-20 Poseidon zero-tree
+    // root, LE byte form), anyone can verify init() was only ever applied once, at genesis.
+    //
+    //   seededRoot — the root of a note tree that already contains the first note(s),
+    //                supplied as the 32-byte LE VM-number byte form (same form as the
+    //                circuit's merkleRoot field element / the verifier's n0 push).
+    function init(bytes32 seededRoot) {
+        require(tx.version == 2);
+        int i = this.activeInputIndex;
+
+        // ── asset binding: this input holds the pinned PUSD category (mutable NFT) ──
+        require(tx.inputs[i].tokenCategory == assetCategory + 0x01);
+
+        // ── gate: only from the empty genesis state ────────────────────────────────
+        // merkleRoot (first 32 bytes of the commitment) must be the empty-tree root and
+        // nullifierSetHash (last 32 bytes) must be all-zero. The empty-tree root is the
+        // depth-20 Poseidon zero-tree root, LE byte form.
+        bytes32 EMPTY_ROOT_LE = 0x3e1f1922dfb671d3f912f7ea461e0a88ee848fdde12b6c18ab1ad2c56ae73421;
+        bytes32 NULL_HASH = 0x0000000000000000000000000000000000000000000000000000000000000000;
+        require(tx.inputs[i].nftCommitment == EMPTY_ROOT_LE + NULL_HASH);
+
+        // ── continuity: output 0 pays back to this same covenant, same category ────
+        require(tx.outputs[0].lockingBytecode == tx.inputs[i].lockingBytecode);
+        require(tx.outputs[0].tokenCategory == assetCategory + 0x01);
+
+        // ── value-neutral: carry the token balance forward unchanged ───────────────
+        require(tx.outputs[0].tokenAmount == tx.inputs[i].tokenAmount);
+
+        // ── state transition: merkleRoot -> seededRoot, nullifierSetHash stays 0 ───
+        require(tx.outputs[0].nftCommitment == seededRoot + NULL_HASH);
+    }
 }

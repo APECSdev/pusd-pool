@@ -22,14 +22,17 @@
 //   pub[0] = merkleRoot   — the pool note-tree root. The covenant checks this
 //                           against its stored state, so it MUST be a real public
 //                           input (not just hashed).
-//   pub[1] = actionHash   — Poseidon(nf0, nf1, cm0, cm1, publicValueAbs,
-//                           publicValueSign, assetCategory). The covenant
-//                           recomputes this same hash from the values it
+//   pub[1] = actionHash   — SHA256(nf0|nf1|cm0|cm1|publicValueAbs|
+//                           publicValueSign|assetCategory|newMerkleRoot), each a
+//                           32-byte big-endian field, truncated to 253 bits. The
+//                           covenant recomputes this same hash from the values it
 //                           independently enforces (nullifier-set updates, new
 //                           commitments, token balance delta, asset category) and
 //                           requires the proof's pub[1] to match. The circuit
 //                           constrains every packed value internally, so a valid
-//                           proof binds all of them.
+//                           proof binds all of them. assetCategory is supplied as
+//                           two 128-bit limbs (assetCategoryHi, assetCategoryLo)
+//                           so that ANY 256-bit CashToken category is admissible.
 //
 // => N_pub = 2  =>  on-chain MSM ic.length = 3  =>  2-scalar MSM (densless-msm as-is).
 
@@ -60,6 +63,34 @@ template FieldToBE256() {
     }
 }
 
+// TwoLimbsToBE256: convert a 256-bit value, supplied as two 128-bit field-element
+// limbs (hi = bits 255..128, lo = bits 127..0), to 256 BIG-ENDIAN bits for SHA256.
+// Unlike FieldToBE256 (limited to < 2^254 by Num2Bits(254)), this accepts the FULL
+// 256-bit range, so ANY CashToken category — an arbitrary SHA256-derived outpoint
+// txid — is admissible (no restriction to categories whose first byte is < 0x40).
+// Each limb is range-checked to exactly 128 bits (Num2Bits(128)); both limbs are
+// far below the BN254 scalar-field prime, so there is no mod-p wraparound. The
+// prover cannot substitute different limbs without changing the 256-bit preimage,
+// so the SHA256 the circuit computes is bound to the exact category the covenant
+// pins as a constructor argument.
+template TwoLimbsToBE256() {
+    signal input hi;            // bits 255..128 (most-significant limb)
+    signal input lo;            // bits 127..0   (least-significant limb)
+    signal output out[256];
+    component hiBits = Num2Bits(128);   // hiBits.out[i] = hi bit i (LSB-first)
+    hiBits.in <== hi;
+    component loBits = Num2Bits(128);   // loBits.out[i] = lo bit i (LSB-first)
+    loBits.in <== lo;
+    for (var p = 0; p < 256; p++) {
+        var valBit = 255 - p;           // BE position p (0 = MSB) = value bit 255-p
+        if (valBit >= 128) {
+            out[p] <== hiBits.out[valBit - 128];
+        } else {
+            out[p] <== loBits.out[valBit];
+        }
+    }
+}
+
 template Pool(TREE_DEPTH, VALUE_BITS) {
     // ---- public inputs (EXACTLY TWO — the on-chain verifier contract) ----
     signal input merkleRoot;
@@ -70,7 +101,8 @@ template Pool(TREE_DEPTH, VALUE_BITS) {
     signal input cm[2];                 // output-note commitments (recorded on-chain)
     signal input publicValueAbs;        // |public PUSD moved| (shield=+, unshield=|−|)
     signal input publicValueSign;       // 0 => publicValue flows IN (shield/transfer); 1 => OUT (unshield)
-    signal input assetCategory;         // PUSD CashToken category (binds proof to the asset)
+    signal input assetCategoryHi;       // PUSD CashToken category, bits 255..128 (binds proof to the asset)
+    signal input assetCategoryLo;       // PUSD CashToken category, bits 127..0
     signal input newMerkleRoot;         // note-tree root after appending cm0, cm1 (bound via actionHash)
 
     // ---- private witnesses: input notes ----
@@ -167,21 +199,35 @@ template Pool(TREE_DEPTH, VALUE_BITS) {
     // enforces is bound to the proof — closing the divergence attack (see COVENANT-DESIGN.md
     // §7 item 4). SHA256 is SNARK-unfriendly (~4 blocks here) but the ON-CHAIN side only
     // verifies the Groth16 proof; it never re-hashes inside the circuit's trust assumptions.
-    component ahF[8];
+    // nf0/nf1/cm0/cm1/publicValueAbs/publicValueSign/newMerkleRoot are all field
+    // elements < 2^254 (Poseidon outputs, a range-checked value, a boolean), so the
+    // cheap FieldToBE256 suffices. Only assetCategory — an arbitrary 256-bit txid —
+    // needs the full-range TwoLimbsToBE256.
+    component ahF[7];
     ahF[0] = FieldToBE256(); ahF[0].in <== nf[0];
     ahF[1] = FieldToBE256(); ahF[1].in <== nf[1];
     ahF[2] = FieldToBE256(); ahF[2].in <== cm[0];
     ahF[3] = FieldToBE256(); ahF[3].in <== cm[1];
     ahF[4] = FieldToBE256(); ahF[4].in <== publicValueAbs;
     ahF[5] = FieldToBE256(); ahF[5].in <== publicValueSign;
-    ahF[6] = FieldToBE256(); ahF[6].in <== assetCategory;
-    ahF[7] = FieldToBE256(); ahF[7].in <== newMerkleRoot;
+    ahF[6] = FieldToBE256(); ahF[6].in <== newMerkleRoot;
+
+    component ahCat = TwoLimbsToBE256();
+    ahCat.hi <== assetCategoryHi;
+    ahCat.lo <== assetCategoryLo;
 
     component ah = Sha256(2048);            // 8 fields x 256 bits = 2048-bit preimage
-    for (var f = 0; f < 8; f++) {
+    // preimage field order: nf0|nf1|cm0|cm1|pvAbs|pvSign|assetCategory|newMerkleRoot
+    for (var f = 0; f < 6; f++) {           // fields 0..5 (nf0 .. publicValueSign)
         for (var b = 0; b < 256; b++) {
             ah.in[f * 256 + b] <== ahF[f].out[b];
         }
+    }
+    for (var b = 0; b < 256; b++) {         // field 6 = assetCategory (from two limbs)
+        ah.in[6 * 256 + b] <== ahCat.out[b];
+    }
+    for (var b = 0; b < 256; b++) {         // field 7 = newMerkleRoot
+        ah.in[7 * 256 + b] <== ahF[6].out[b];
     }
 
     // Truncate the 256-bit hash to 253 bits (clear the top 3 bits, i.e. BE out bits 0, 1, 2)
