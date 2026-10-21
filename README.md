@@ -2,7 +2,7 @@
 
 # Paryon (PUSD) Shielded Pool
 
-Zero-knowledge privacy pool (zkSNARKs) for the **Paryon (PUSD)** stablecoin on BCH **Chipnet** — the zero-knowledge core of
+Zero-knowledge privacy pool (zkSNARKs) for the **Paryon (PUSD)** stablecoin on BCH **Chipnet** — the core of
 [nito.cash](https://github.com/APECSdev/nito.cash) **Private Payments**
 (BCH Blaze 2026 submission).
 
