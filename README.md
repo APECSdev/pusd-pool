@@ -103,12 +103,13 @@ category as the `assetCategory` constructor arg at deploy time):
    chipnet (the 2026 VM raised `maximumTokenCommitmentLength` to 128; the 2023
    limit of 40 is no longer enforced on chipnet — confirmed live).
 
-## On-chain demo (chipnet, confirmed 2026-10-20)
+## On-chain demo (chipnet, SHIELD/TRANSFER confirmed 2026-10-20; UNSHIELD 2026-10-21)
 
 A fresh, self-contained pool was deployed, the **first SHIELD transaction was
-confirmed on chipnet block 328733**, and the **first shielded→shielded TRANSFER
-was confirmed on chipnet block 328740**. (An earlier funding chain — funding tx
-`6ea1883d...` — was superseded; the chain below is authoritative.)
+confirmed on chipnet block 328733**, the **first shielded→shielded TRANSFER
+was confirmed on chipnet block 328740**, and the **first UNSHIELD (shielded→public
+withdraw) was confirmed on chipnet block 328744**. (An earlier funding chain —
+funding tx `6ea1883d...` — was superseded; the chain below is authoritative.)
 
 ### Pool deployment
 
@@ -169,6 +170,34 @@ was confirmed on chipnet block 328740**. (An earlier funding chain — funding t
   standard** — relayable under default mempool policy.
 - **Explorer**: `https://chipnet.chaingraph.cash/tx/3a8b9287ea97c050b0110522afa84daf0de90984ef3266db4062768d19adf8a5`
 
+### UNSHIELD transaction (TX-U1) — shielded → public (withdraw)
+
+- **txid**: `c8d4c6e67859602a700b36ed33c6d90f0bf0ecb43c2e58b87041f845d4cc214a`
+- **confirmed**: chipnet block **328744** (2026-10-21)
+- **shape**: 8 inputs (5 verifier from TX-T1: vouts 1,2,3 = executor×3, vout 5 =
+  genesis, vout 4 = terminal; pool covenant TX-T1:vout0; public FT TX-T1:vout6;
+  sats TX-T1:vout7), **9 outputs** (pool continuity ‖ **250k PUSD payout** ‖
+  executor×3 ‖ terminal ‖ genesis ‖ public-FT change ‖ sats change), 37,071 bytes,
+  40,000-sat fee. The unshield adds ONE output vs. SHIELD/TRANSFER's 8: the covenant
+  requires the public payout as a bare fungible-token output at index 1
+  (`tx.outputs[1].tokenCategory == assetCategory`, `tokenAmount == publicValueAbs`),
+  so the five verifier re-fund outputs shift to indices 2–6.
+- **result**: `publicValueAbs = 250,000`, `publicValueSign = 1` (value flows OUT).
+  The two TRANSFER notes (600k + 400k) are spent (nullifiers published) and replaced
+  by fresh notes totalling 750k, so the pool balance goes 1,000,000 → **750,000
+  shielded PUSD**, and **250,000 PUSD is paid out publicly** to the mint key (vout 1,
+  bare FT). Pool continuity vout 0 carries 750k FT + mutable NFT with the new state
+  `newMerkleRoot ‖ sha256(oldNullifierSetHash ‖ nf0 ‖ nf1)` =
+  `656781d86aed5d3a3d6b778db85225ee4ce1ae9a1c856d7b030d9b456354bc26` (LE) ‖
+  `e6f62e98819d1665c9f590574e624fa55b5a8bdb52741fce2885970cc19547bd`.
+- **actionHash binding**: as in TRANSFER, the covenant recomputes the SHA256 action
+  hash over the enforced values (now with `|pv| = 250,000`, `signPv = 1`) and
+  requires it to equal the genesis step's `n1` (byte offset 1792). `actionHash =
+  13109222487455492990002112920267863123858488928455615422294205180256861739436`.
+- **VM**: all 8 inputs pass on `createVirtualMachineBch2026`, **both consensus and
+  standard** — relayable under default mempool policy.
+- **Explorer**: `https://chipnet.chaingraph.cash/tx/c8d4c6e67859602a700b36ed33c6d90f0bf0ecb43c2e58b87041f845d4cc214a`
+
 ### Verifier patching required to compose with the covenant
 
 The stock `densless-msm` verifier's **terminal step hard-pins `tx.inputs.length == 5`**
@@ -188,3 +217,16 @@ covenant reads exactly these, so no pool redeploy is needed.
 
 (The patched `terminal.mjs` and the full build records live in `deploy-meta-s1.json` on
 the build box; backup `terminal.mjs.bak` preserved.)
+
+**Per-proof witness length (`GENESIS_PAD`).** The genesis step's `n0`/`n1` pushes land
+on the fixed byte offsets 1825 / 1792 ONLY because the witness prefix is padded to a
+constant length. Groth16 VM-number pushes are minimal-length, so a proof whose scalars
+happen to encode one byte shorter shifts `n0`/`n1` one byte EARLIER and the covenant's
+fixed-offset reads miss (the root / actionHash bindings then fail evaluation). TX-S1
+and TX-T1 needed no pad (their genesis witness was already 7,769 bytes with `n0`@1825,
+`n1`@1792); TX-U1's witness came out 1 byte short (7,768 bytes, `n0`@1824, `n1`@1791),
+so its steps were generated with **`GENESIS_PAD=1`** to push `n0`/`n1` back onto
+1825 / 1792 (7,769 bytes). The pad is a dropped zero push — it only buys op-cost
+budget and does not change the parsed stack. When generating steps for a NEW proof,
+always re-check the offsets (e.g. `genesisLen`, `n0`@1825, `n1`@1792) and bump
+`GENESIS_PAD` if they land early.
