@@ -59,7 +59,7 @@ const g1=(p)=>({x:p[0],y:p[1]});
 const g2=(p)=>({x:{c0:p[0][0],c1:p[0][1]},y:{c0:p[1][0],c1:p[1][1]}}); // snarkjs G2 = [[x_c0,x_c1],[y_c0,y_c1]] (real-first)
 
 const out={
-  description:"PUSD pool BN254 Groth16 vectors (Option 2: 2 public inputs = [merkleRoot, actionHash]). Generated from nito pusd-pool verification_key.json + a real proof.",
+  description:"PUSD pool BN254 Groth16 vectors (Option 2: 2 public inputs = [merkleRoot, actionHash]). Generated from nito pusd-shielded-pool verification_key.json + a real proof.",
   curve:"bn254 / alt_bn128 (EIP-196/197)", oracle:"@noble/curves bn254",
   p: vk.p ?? undefined, r: vk.r ?? undefined,
   publicInputs: publicSignals,

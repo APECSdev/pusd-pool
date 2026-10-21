@@ -1,5 +1,5 @@
 {
-  "name": "pusd-pool",
+  "name": "pusd-shielded-pool",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-cd ~/pusd-pool
+cd ~/pusd-shielded-pool
 SJ=node_modules/.bin/snarkjs
 echo "[$(date -u +%T)] prepare phase2..."
 $SJ powersoftau prepare phase2 build/ptau/pot_1.ptau build/ptau/pot_final.ptau

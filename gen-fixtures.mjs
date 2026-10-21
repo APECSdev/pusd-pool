@@ -72,10 +72,10 @@ for (let s=0n; s<5n; s++) {
 }
 
 const out={
-  artifactSha256:"pusd-pool-option2",
+  artifactSha256:"pusd-shielded-pool-option2",
   vk:{ alpha:g1(vk.vk_alpha_1), beta:g2(vk.vk_beta_2), gamma:g2(vk.vk_gamma_2), delta:g2(vk.vk_delta_2), ic: vk.IC.map(g1) },
   fixtures,
-  provenance:"nito pusd-pool (Option 2: 2 public inputs = [merkleRoot, actionHash]); 5 distinct TRANSFER proofs",
+  provenance:"nito pusd-shielded-pool (Option 2: 2 public inputs = [merkleRoot, actionHash]); 5 distinct TRANSFER proofs",
   mapping:"Genesis public inputs pushes 37,36; A=(header2,-header3), B=header8..11, C=header6..7. Public MSM reproduces header4/5 for every fixture."
 };
 writeFileSync("build/pusd-public-fixtures.json", JSON.stringify(out,null,2));

@@ -1,4 +1,4 @@
-# pusd-pool — chipnet build & on-chain record
+# pusd-shielded-pool — chipnet build & on-chain record
 
 > Detailed build + on-chain record. The **main project README** is at
 > [APECSdev/nito.cash](https://github.com/APECSdev/nito.cash).
@@ -39,7 +39,7 @@ Shielded pool for PUSD (ParyonUSD) on BCH **Chipnet** — the core of the
 
 ## Regenerating `build/` (gitignored binaries)
 
-On the `runner` build box (`~/pusd-pool`), with `pnpm install --frozen-lockfile` done:
+On the `runner` build box (`~/pusd-shielded-pool`), with `pnpm install --frozen-lockfile` done:
 
 1. `ppot_0080_18.ptau` — re-download from the PSE S3 bucket (289 MB, byte-verified).
 2. Circuit compile + phase 2: `run-setup.sh` / `run-setup2.sh`
@@ -84,7 +84,7 @@ category as the `assetCategory` constructor arg at deploy time):
   `bchtest:qpt2lckk5ck5x7rwcnl6ucj6z0h9njm0pvy5nudg50`
   (token-aware form `bchtest:zpt2lckk5ck5x7rwcnl6ucj6z0h9njm0pvr7qzrwtu`).
   Mnemonic/private key live ONLY in the gitignored secret store
-  (`/Workspace/apecsdev/.secrets/pusd-pool-chipnet-mint.json`, chmod 600) —
+  (`/Workspace/apecsdev/.secrets/pusd-shielded-pool-chipnet-mint.json`, chmod 600) —
   test funds, no value.
 - Explorer: `https://chipnet.chaingraph.cash/tx/<txid>`.
 
