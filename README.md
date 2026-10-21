@@ -1,6 +1,6 @@
 <!-- README.md -->
 
-# Paryon (PUSD) Pool
+# Paryon (PUSD) Shielded Pool
 
 Shielded pool for the **Paryon (PUSD)** stablecoin on BCH **Chipnet** — the zero-knowledge core of
 [nito.cash](https://github.com/APECSdev/nito.cash) **Private Payments**
