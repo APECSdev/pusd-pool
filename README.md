@@ -57,9 +57,10 @@ box; publish via a GitHub Release if external distribution is needed.
   PASS — 5/5 invalid rejected, 9/9 mutated public inputs rejected, 26/26
   maintainer red-team runs rejected.
 - **Live on chipnet**: fresh pool deployment (TX-P3/G3/B3) + first SHIELD
-  (TX-S1) confirmed at block 328733 — see "On-chain demo" below. The full 8-input
-  SHIELD tx (5 verifier inputs + pool covenant + public FT + sats) passes on the
-  BCH 2026 VM, both consensus and standard (relayable under default mempool policy).
+  (TX-S1) confirmed at block 328733 + first shielded→shielded TRANSFER (TX-T1)
+  confirmed at block 328740 — see "On-chain demo" below. Each full 8-input tx
+  (5 verifier inputs + pool covenant + public FT + sats) passes on the BCH 2026
+  VM, both consensus and standard (relayable under default mempool policy).
 
 ## Chipnet demo token (stand-in for PUSD, minted 2026-10-19)
 
@@ -104,8 +105,9 @@ category as the `assetCategory` constructor arg at deploy time):
 
 ## On-chain demo (chipnet, confirmed 2026-10-20)
 
-A fresh, self-contained pool was deployed and the **first SHIELD transaction was
-confirmed on chipnet block 328733**. (An earlier funding chain — funding tx
+A fresh, self-contained pool was deployed, the **first SHIELD transaction was
+confirmed on chipnet block 328733**, and the **first shielded→shielded TRANSFER
+was confirmed on chipnet block 328740**. (An earlier funding chain — funding tx
 `6ea1883d...` — was superseded; the chain below is authoritative.)
 
 ### Pool deployment
@@ -139,6 +141,33 @@ confirmed on chipnet block 328733**. (An earlier funding chain — funding tx
 - **VM**: all 8 inputs pass on `createVirtualMachineBch2026`, **both consensus and
   standard** — relayable under default mempool policy.
 - **Explorer**: `https://chipnet.chaingraph.cash/tx/d3a442f3d3145cba3d1d6fd626164e077fa92b02720b882e3e98b40e70f4188c`
+
+### TRANSFER transaction (TX-T1) — shielded → shielded
+
+- **txid**: `3a8b9287ea97c050b0110522afa84daf0de90984ef3266db4062768d19adf8a5`
+- **confirmed**: chipnet block **328740**
+- **shape**: 8 inputs (5 verifier from TX-S1: vouts 1,2,3 = executor×3, vout 5 =
+  genesis, vout 4 = terminal; pool covenant TX-S1:vout0; public FT TX-S1:vout6;
+  sats TX-S1:vout7), 8 outputs (pool continuity ‖ executor×3 ‖ terminal ‖ genesis
+  ‖ public-FT change ‖ sats change), 36,996 bytes, 40,000-sat fee.
+- **result**: pure shielded→shielded transfer (`publicValueAbs = 0`,
+  `publicValueSign = 0`): the two SHIELD notes (700k + 300k) are spent (nullifiers
+  published) and replaced by fresh 600k + 400k notes, so the pool balance stays
+  **1,000,000 shielded PUSD**. Pool continuity vout 0 carries 1M FT + mutable NFT
+  with the new state `newMerkleRoot ‖ sha256(oldNullifierSetHash ‖ nf0 ‖ nf1)` =
+  `97bc4c8a9184417d68e211745b8534b0f934b7fffd220dfcf04605ddf7d88301` (LE) ‖
+  `ca64cf7a97d50e13499895eb5093a9fae0b03a8a5b22e044a96ca67e51bb3580`; public-FT
+  change (vout 6) = 99,000,000 units back to the mint key.
+- **actionHash binding**: the covenant recomputes
+  `SHA256(nf0 ‖ nf1 ‖ cm0 ‖ cm1 ‖ |pv| ‖ signPv ‖ category ‖ newMerkleRoot)`
+  (each field 32-byte big-endian, top 3 bits cleared to fit the BN254 scalar
+  field — see `COVENANT-DESIGN.md` §7) and requires it to equal the genesis
+  step's second public input (`n1`, byte offset 1792), so the ZK proof is bound
+  to the exact note transition the covenant applies. `actionHash =
+  4261255591739942988380960310842541626307877897755389090012830740782359021384`.
+- **VM**: all 8 inputs pass on `createVirtualMachineBch2026`, **both consensus and
+  standard** — relayable under default mempool policy.
+- **Explorer**: `https://chipnet.chaingraph.cash/tx/3a8b9287ea97c050b0110522afa84daf0de90984ef3266db4062768d19adf8a5`
 
 ### Verifier patching required to compose with the covenant
 
